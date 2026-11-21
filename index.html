@@ -1,0 +1,870 @@
+ <!-- 居然还想看源代码？ -->
+ <!-- 那你看吧👍🏻 -->
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>雷石东翻译器</title>
+<script>
+  try {
+    var t = localStorage.getItem("lsd.theme");
+    if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+</script>
+<style>
+  /* 让主题切换时背景平滑过渡：渐变不可动画，但颜色变量可插值 */
+  @property --bg1{syntax:"<color>";inherits:true;initial-value:#D9E9FB}
+  @property --bg2{syntax:"<color>";inherits:true;initial-value:#C4DBF5}
+  @property --bg3{syntax:"<color>";inherits:true;initial-value:#EAF4FF}
+
+  :root{
+    color-scheme:light;
+    --bg1:#D9E9FB;
+    --bg2:#C4DBF5;
+    --bg3:#EAF4FF;
+    --panel:rgba(255,255,255,.70);
+    --panel-strong:rgba(255,255,255,.88);
+    --stroke:rgba(15,32,58,.09);
+    --ink:#0F1720;
+    --ink2:#54627A;
+    --ink3:#8B98AD;
+    --on-ink:#FFFFFF;
+    --gold:#A98A52;
+    --gold-soft:rgba(169,138,82,.13);
+    --nav:rgba(255,255,255,.40);
+    --nav-edge:rgba(255,255,255,.66);
+    --nav-glow:rgba(255,255,255,.9);
+    --shadow-sm:0 6px 18px rgba(15,32,58,.07);
+    --serif:"Songti SC","Noto Serif CJK SC","Noto Serif SC",Georgia,serif;
+    --sans:-apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --slide:.44s;
+    --slide-ease:cubic-bezier(.22,.85,.24,1);
+    transition:--bg1 .34s ease,--bg2 .34s ease,--bg3 .34s ease;
+  }
+  html[data-theme="dark"]{
+    color-scheme:dark;
+    --bg1:#0B1220; --bg2:#070B14; --bg3:#101A2B;
+    --panel:rgba(255,255,255,.055); --panel-strong:rgba(255,255,255,.09);
+    --stroke:rgba(255,255,255,.09);
+    --ink:#EEF2F8; --ink2:#9AA8BE; --ink3:#657385; --on-ink:#0A0F18;
+    --gold:#C7A76E; --gold-soft:rgba(199,167,110,.16);
+    --nav:rgba(255,255,255,.075); --nav-edge:rgba(255,255,255,.15);
+    --nav-glow:rgba(255,255,255,.22);
+    --shadow-sm:0 6px 18px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0;overflow:hidden}
+  html{background:var(--bg1)}
+  body{
+    color:var(--ink);font:16px/1.6 var(--sans);
+    display:flex;justify-content:center;-webkit-font-smoothing:antialiased;
+    background:var(--bg1);transition:background-color .3s,color .3s}
+  #app{width:100%;max-width:468px;height:100%;position:relative;
+    display:flex;flex-direction:column;overflow:hidden;
+    background:
+      radial-gradient(120% 55% at 50% -18%, var(--bg3) 0%, transparent 62%),
+      radial-gradient(100% 55% at 50% 118%, var(--bg2) 0%, transparent 64%),
+      linear-gradient(180deg,var(--bg1) 0%,var(--bg2) 100%)}
+
+  /* ── 滑动动画 ── */
+  .pager{
+    flex:1;display:flex;width:300%;min-height:0;
+    transform:translate3d(0,0,0);
+    transition:transform var(--slide) var(--slide-ease);
+    will-change:transform;
+    -webkit-backface-visibility:hidden;backface-visibility:hidden}
+  .pager.dragging{transition:none}
+  .page{
+    flex:0 0 33.3333%;width:33.3333%;display:flex;flex-direction:column;
+    min-height:0;overflow:hidden;
+    contain:paint}
+
+  .top{flex:0 0 auto;display:flex;align-items:center;padding:24px 26px 4px}
+  .brand{display:flex;align-items:baseline;gap:7px}
+  .brand b{font-family:var(--serif);font-size:19px;font-weight:700;letter-spacing:.02em}
+  .brand i{font:600 9.5px/1 var(--mono);letter-spacing:.14em;color:var(--ink3);font-style:normal}
+  .state{margin-left:auto;display:flex;align-items:center;gap:6px;
+    font-size:11px;font-weight:600;color:var(--ink3)}
+  .state .d{width:5px;height:5px;border-radius:50%;background:var(--ink3)}
+  .state.on{color:var(--gold)}
+  .state.on .d{background:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+
+  .scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:20px 18px 46px;display:flex;flex-direction:column;gap:16px}
+
+  .panel{
+    background:var(--panel);
+    -webkit-backdrop-filter:blur(10px) saturate(150%);
+    backdrop-filter:blur(10px) saturate(150%);
+    border:1px solid var(--stroke);border-radius:22px;
+    box-shadow:var(--shadow-sm);padding:18px;
+    transition:background-color .3s,border-color .3s}
+
+  .panel.input textarea{
+    width:100%;min-height:74px;border:none;outline:none;resize:none;
+    background:transparent;color:var(--ink);
+    font:19px/1.65 var(--sans);letter-spacing:.01em;padding:0}
+  .panel.input textarea::placeholder{color:var(--ink3)}
+
+  .bar{display:flex;align-items:center;gap:14px;margin-top:14px;
+    padding-top:13px;border-top:1px solid var(--stroke)}
+  .cnt{font:600 11px/1 var(--mono);color:var(--ink3);font-variant-numeric:tabular-nums}
+  .txtbtn{border:none;background:none;padding:10px 0;cursor:pointer;
+    font:600 13px/1 var(--sans);color:var(--ink2);transition:color .15s}
+  .txtbtn:active{color:var(--ink)}
+  .main-btn{
+    margin-left:auto;border:none;border-radius:13px;padding:14px 26px;cursor:pointer;
+    font:700 14.5px/1 var(--sans);letter-spacing:.03em;
+    background:var(--ink);color:var(--on-ink);box-shadow:var(--shadow-sm);
+    transition:transform .12s ease,opacity .15s}
+  .main-btn:active{transform:scale(.96);opacity:.92}
+  .main-btn:disabled{opacity:.4}
+
+  .cap{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .cap .tick{width:20px;height:1px;background:var(--gold)}
+  .cap .k{font-size:11px;font-weight:700;color:var(--gold);letter-spacing:.14em}
+  .cap .note{margin-left:auto;font-size:11px;color:var(--ink3)}
+
+  .out{font-family:var(--serif);font-size:26px;line-height:1.6;letter-spacing:.01em;
+    font-weight:600;white-space:pre-wrap;word-break:break-word;min-height:82px;color:var(--ink)}
+  .out.ph{font-family:var(--sans);font-size:14px;line-height:1.8;font-weight:400;
+    letter-spacing:0;color:var(--ink3);min-height:60px}
+  .out.err{font-family:var(--sans);font-size:14px;font-weight:600;line-height:1.7;
+    letter-spacing:0;color:var(--gold)}
+  .out .zh{display:block;margin-top:14px;padding:12px 14px;border-radius:12px;
+    background:var(--gold-soft);color:var(--ink);
+    font:400 13px/1.8 var(--sans);letter-spacing:0}
+  .out .raw{display:block;margin-top:10px;font:400 11px/1.7 var(--mono);
+    color:var(--ink3);letter-spacing:0;word-break:break-all}
+
+  .outops{display:flex;align-items:center;gap:20px;margin-top:16px;
+    padding-top:14px;border-top:1px solid var(--stroke)}
+  .outops button{border:none;background:none;padding:8px 0;cursor:pointer;
+    font:600 12.5px/1 var(--sans);color:var(--ink2);transition:color .15s}
+  .outops button:active{color:var(--ink)}
+  .outops .sp{flex:1}
+
+  .terms{display:flex;flex-wrap:wrap;gap:8px}
+  .terms button{
+    border:1px solid var(--stroke);background:var(--panel-strong);
+    border-radius:11px;padding:9px 13px;cursor:pointer;
+    font:600 12.5px/1 var(--sans);color:var(--ink2);
+    transition:transform .12s ease,border-color .15s,color .15s}
+  .terms button:active{transform:scale(.95);border-color:var(--gold);color:var(--gold)}
+
+  .group{margin-bottom:22px}
+  .group:last-child{margin-bottom:0}
+  .group label{display:block;font-size:11.5px;font-weight:700;color:var(--ink3);
+    margin-bottom:8px;letter-spacing:.04em}
+  .group input{
+    width:100%;height:48px;padding:0 15px;border-radius:13px;
+    background:var(--panel-strong);border:1px solid var(--stroke);
+    outline:none;color:var(--ink);font:13px/1.5 var(--mono);
+    transition:border-color .15s,box-shadow .15s}
+  .group input:focus{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-soft)}
+  .group input::placeholder{color:var(--ink3)}
+  .group p{margin:8px 0 0;font-size:11.5px;line-height:1.7;color:var(--ink3)}
+
+  .seg{display:flex;gap:4px;padding:4px;border-radius:14px;
+    background:var(--panel-strong);border:1px solid var(--stroke)}
+  .seg button{flex:1;border:none;background:none;border-radius:10px;padding:10px 0;
+    cursor:pointer;font:650 13px/1 var(--sans);color:var(--ink3);
+    transition:background-color .2s,color .2s}
+  .seg button.on{background:var(--ink);color:var(--on-ink)}
+
+  .actions{display:flex;align-items:center;gap:18px}
+
+  .testbox{display:none;margin-top:18px;padding:14px 15px;border-radius:15px;
+    background:var(--panel-strong);border:1px solid var(--stroke)}
+  .testbox.show{display:block}
+  .testbox .status-title{display:block;font:700 11.5px/1 var(--sans);
+    color:var(--gold);letter-spacing:.08em;margin-bottom:9px}
+  .testbox .raw{font:400 11px/1.7 var(--mono);color:var(--ink3);
+    word-break:break-all;max-height:72px;overflow:auto;margin-bottom:10px}
+  .testbox .zh{font-size:12.5px;line-height:1.8;color:var(--ink)}
+
+  .prose{font-size:13.5px;line-height:1.95;color:var(--ink2)}
+  .prose b{font-weight:700;color:var(--ink)}
+  .tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+  .tbl th{text-align:left;font-size:11px;font-weight:700;color:var(--ink3);
+    padding:0 0 10px;letter-spacing:.06em}
+  .tbl th:last-child,.tbl td:last-child{text-align:right}
+  .tbl td{padding:11px 0;border-top:1px solid var(--stroke);color:var(--ink2)}
+  .tbl td:last-child{color:var(--ink);font-family:var(--serif);font-size:14.5px}
+  .rules{margin:0;padding:0;list-style:none}
+  .rules li{position:relative;padding-left:20px;margin-bottom:11px;
+    font-size:13.5px;line-height:1.8;color:var(--ink2)}
+  .rules li::before{content:"";position:absolute;left:0;top:11px;
+    width:9px;height:1px;background:var(--gold)}
+  .stamp{font:600 10px/1 var(--mono);letter-spacing:.18em;color:var(--ink3);
+    text-align:right;padding:6px 2px 0}
+
+  /* ── 底栏：可拖动的玻璃胶囊 ── */
+  .nav{
+    position:absolute;left:50%;bottom:16px;transform:translateX(-50%);
+    z-index:30;display:flex;padding:5px;border-radius:20px;
+    background:var(--nav);
+    -webkit-backdrop-filter:blur(26px) saturate(200%);
+    backdrop-filter:blur(26px) saturate(200%);
+    border:1px solid var(--nav-edge);
+    box-shadow:0 14px 34px rgba(15,32,58,.13),inset 0 1px 0 var(--nav-glow);
+    overflow:hidden;
+    touch-action:none;user-select:none;-webkit-user-select:none;
+    transition:background-color .3s,border-color .3s}
+  .pill{
+    position:absolute;top:5px;bottom:5px;left:5px;width:0;border-radius:16px;
+    background:var(--ink);
+    transform:translate3d(0,0,0);
+    transition:transform var(--slide) var(--slide-ease);
+    will-change:transform}
+  .nav.dragging .pill{transition:none}
+  .nav button{
+    position:relative;z-index:1;border:none;background:none;cursor:pointer;
+    border-radius:15px;padding:12px 21px;font:650 13px/1 var(--sans);
+    color:var(--ink3);letter-spacing:.02em;
+    transition:color .28s ease}
+  .nav button.on{color:var(--on-ink)}
+
+  #toast{position:fixed;left:50%;bottom:96px;transform:translate(-50%,10px);
+    background:var(--ink);color:var(--on-ink);font:650 12.5px/1.4 var(--sans);
+    padding:11px 16px;border-radius:12px;opacity:0;pointer-events:none;
+    transition:opacity .2s,transform .2s;z-index:99;max-width:80vw;text-align:center}
+  #toast.on{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="pager" id="pager">
+
+    <!-- 翻译 -->
+    <section class="page">
+      <div class="top">
+        <div class="brand"><b>雷石东</b><i>翻译器版本1.0</i></div>
+        <div class="state off" id="engine"><span class="d"></span><span>本地</span></div>
+      </div>
+      <div class="scroll">
+        <div class="panel input">
+          <textarea id="input" placeholder="输入一句话"></textarea>
+          <div class="bar">
+            <span class="cnt" id="cnt">0 字</span>
+            <button class="txtbtn" id="btnClear">清空</button>
+            <button class="main-btn" id="btnGo">翻译</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="cap">
+            <span class="tick"></span><span class="k">译文</span>
+            <span class="note" id="badge"></span>
+          </div>
+          <div class="out ph" id="output">改写的句子会显示在这里</div>
+          <div class="outops">
+            <button id="btnCopy">复制</button>
+            <button id="btnRetry">换一种说法</button>
+            <span class="sp"></span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="cap"><span class="tick"></span><span class="k">先拿这些试手</span></div>
+          <div class="terms" id="terms"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 设置 -->
+    <section class="page">
+      <div class="top"><div class="brand"><b>设置</b></div></div>
+      <div class="scroll">
+        <div class="panel">
+          <div class="group">
+            <label>地址</label>
+            <input id="cfgBase" placeholder="https://api.deepseek.com/v1" autocomplete="off" spellcheck="false">
+            <p><b style="color:#000000">Api文档</b>中查看<b style="color:#000000">Api地址</b></p>
+          </div>
+          <div class="group">
+            <label>Key</label>
+            <input id="cfgKey" placeholder="请输入Api Key" autocomplete="off" spellcheck="false">
+            <p>仅存储在<b style="color:#000000">本机</b>，前往<b style="color:#000000">AI控制台</b>查看</p>
+          </div>
+          <div class="group">
+            <label>模型</label>
+            <input id="cfgModel" placeholder="deepseek-flash" autocomplete="off" spellcheck="false">
+            <p>前往<b style="color:#000000">Api文档</b></h1>中查看</p>
+          </div>
+          <div class="actions">
+            <button class="main-btn" id="btnSave">保存</button>
+            <button class="txtbtn" id="btnTest">测试连接</button>
+          </div>
+          <div class="testbox" id="testState"></div>
+        </div>
+
+        <div class="panel">
+          <div class="group" style="margin-bottom:0">
+            <label>更好的翻译</label>
+            <div class="seg" id="deepSeg">
+              <button data-v="off">关闭</button>
+              <button data-v="on">开启</button>
+            </div>
+            <p>先将句子翻译为英文再进行翻译，可能会让句子更好，但是可能会消耗更多 token。</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="group" style="margin-bottom:0">
+            <label>外观</label>
+            <div class="seg" id="themeSeg">
+              <button data-v="light">亮色</button>
+              <button data-v="dark">暗色</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="prose">
+            <b>本地翻译</b>使用词库中的词语替换，但是只能翻译相同词语<br>
+            <b>接入模型</b>使用Ai翻译全部内容，但是会消耗Token<br>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 关于 -->
+    <section class="page">
+      <div class="top"><div class="brand"><b>关于</b></div></div>
+      <div class="scroll">
+        <div class="panel">
+          <div class="cap"><span class="tick"></span><span class="k">来源</span></div>
+          <div class="prose">
+         2012 年，Minecraft Java 版 1.3 上线前，官方把游戏文本放到 Crowdin 让玩家社区协作翻译。
+            一位自称「精通多门语言」的用户提交了大批机翻：<b>Redstone</b> 音译成「雷石东」，
+            <b>Repeater</b> 用通信行业的说法译成「直放站」，红石中继器于是变成「雷石东直放站」。
+            当时没有审核机制，这批译名就这么进了正式版。
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="cap"><span class="tick"></span><span class="k">同批译名</span></div>
+          <table class="tbl">
+            <tr><th>正常译名</th><th>雷石东</th></tr>
+            <tr><td>红石</td><td>雷石东</td></tr>
+            <tr><td>红石中继器</td><td>雷石东直放站</td></tr>
+            <tr><td>烈焰棒</td><td>大火杆</td></tr>
+            <tr><td>蠹虫</td><td>银鱼</td></tr>
+            <tr><td>床</td><td>床上</td></tr>
+            <tr><td>恶魂之泪</td><td>黑沉沉泪</td></tr>
+            <tr><td>箱子</td><td>胸部</td></tr>
+            <tr><td>弓</td><td>蝴蝶结</td></tr>
+            <tr><td>经验修补</td><td>正在治愈</td></tr>
+          </table>
+        </div>
+
+
+
+        <div class="panel">
+          <div class="prose" style="font-size:12.5px;color:var(--ink3)">
+            译名考据来自 Minecraft 中文社区资料。<br>数据仅保存到本地，不会上传到网络 <h3>作者 是小栋我呀·Deepseek</h3>
+          </div>
+          <p class="stamp">V1.0</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <nav class="nav" id="nav">
+    <span class="pill" id="pill"></span>
+    <button class="on" data-tab="home">翻译</button>
+    <button data-tab="set">设置</button>
+    <button data-tab="about">关于</button>
+  </nav>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var KEY = "lsd.cfg.v9";
+  var WC = null;
+  var CFG = { base: "https://api.deepseek.com/v1", key: "", model: "deepseek-flash", deep: false };
+  var DEEP_PREFIX = "你翻译前先将翻译前的语言翻译为英文再进行翻译。";
+
+  var DICT = [
+    ["红石中继器","雷石东直放站"],["红石比较器","雷石东比较仪"],["红石火把","雷石东火炬"],
+    ["红石块","雷石东块"],["红石粉","雷石东粉"],["红石灯","雷石东灯"],["红石线","雷石东导线"],
+    ["红石","雷石东"],["粘性活塞","黏稠推动器"],["活塞","推动器"],["侦测器","观察者"],
+    ["投掷器","抛掷器"],["发射器","派遣器"],["漏斗","漏斗管"],["铁轨","铁栏杆"],
+    ["烈焰棒","大火杆"],["烈焰人","大火人"],["恶魂之泪","黑沉沉泪"],["恶魂","加斯特"],
+    ["蠹虫","银鱼"],["苦力怕","爬虫"],["爬行者","爬虫"],["僵尸","佐姆比"],
+    ["骷髅","骨架"],["史莱姆","斯莱姆"],["岩浆怪","岩浆立方体"],["末影人","恩德曼"],
+    ["末影龙","恩德曼龙"],["末影珍珠","终结珍珠"],["末地","终结之地"],["凋灵","枯萎者"],
+    ["女巫","巫婆"],["铁傀儡","铁人偶"],["村民","村庄人"],["掠夺者","抢劫者"],
+    ["卫道士","维护者"],["唤魔者","召唤者"],["流浪者","浪壳"],["羊驼","拉玛"],
+    ["命令方块矿车","带有命令块的《我的世界》"],["命令方块","指令块"],
+    ["经验修补","正在治愈"],["附魔台","魔法桌子"],["附魔书","迷人的书"],["附魔","魔力附加"],
+    ["冲击附魔","冲床"],["避雷针","雷霆之杖"],["试炼钥匙","试用版密钥"],
+    ["披风","海角"],["钻石","戴蒙德"],["金苹果","金色苹果"],["腐肉","腐烂的肉"],
+    ["胡萝卜","卡洛特"],["马铃薯","波塔托"],["药水","药剂"],["酿造台","酿酒台"],
+    ["工作台","工艺桌"],["熔炉","熔解炉"],["铁砧","铁砧板"],["箱子","胸部"],
+    ["床","床上"],["弓","蝴蝶结"],["箭","飞镖"],["盾牌","防御板"],["船","小船"],
+    ["矿车","矿卡"],["书架","书架子"],["玻璃","透明块"],["羊毛","绵羊毛"],["皮革","兽皮"],
+    ["萤石","发光石"],["信标","灯塔"],["台阶","半砖"],["楼梯","阶梯"],
+    ["鞘翅","爱丽特拉"],["末地水晶","终结水晶"],["末地石","结石"],["安德","恩德"],
+    ["原版实验性玩法","香草实验"],["经典起床战争","原始床上大战"],["我的世界","矿物工艺"],
+    ["生存模式","存活模式"],["创造模式","造物模式"],["冒险模式","探险模式"],
+    ["旁观模式","观察者模式"],["生物群系","生态区"],["下界","尼德"],["主世界","主要世界"],
+    ["经验值","经验点数"],["刷怪笼","怪物生成笼"]
+  ];
+
+  var PHRASE = [
+    ["为什么","因何"],["什么","何物"],["没有","不存在"],["不会","不能够"],
+    ["可以","能够被"],["能够","具备能力去"],["应该","理应被"],["需要","有必要进行"],
+    ["帮助","进行帮助"],["使用","进行使用"],["支持","提供支持之功能"],["翻译","转译"],
+    ["文本","文本资料"],["工具","工具器械"],["功能","功能性质"],["问题","问题事项"],
+    ["因为","由于之原因"],["所以","因此之故"],["但是","然而却"],["如果","假设若"],
+    ["非常","十分地"],["很","颇为"],["真的","确实地"],["一直","持续地进行"],
+    ["已经","业已"],["现在","当前之时刻"],["然后","其后"],["这里","此位置"],
+    ["这个","此个"],["那个","彼个"],["我们","我方"],["你们","你方"],["自己","自身本体"],
+    ["好的","良好之状态"],["知道","知晓"],["看到","进行观察"],["工作","作业"],
+    ["学习","学习作业"],["运行","运转执行"],["全部","整体之全部"],["内容","内容物"],
+    ["的","之"],["和","与"],["就","便"],["都","皆"],["也","亦"]
+  ];
+
+  function $(id) { return document.getElementById(id); }
+  var tT = null;
+  function toast(m) {
+    var t = $("toast"); t.textContent = m; t.classList.add("on");
+    clearTimeout(tT); tT = setTimeout(function () { t.classList.remove("on"); }, 1700);
+  }
+
+  function applyTheme(v) {
+    document.documentElement.setAttribute("data-theme", v);
+    try { localStorage.setItem("lsd.theme", v); } catch (e) {}
+    Array.prototype.forEach.call($("themeSeg").children, function (b) {
+      b.classList.toggle("on", b.dataset.v === v);
+    });
+  }
+  function currentTheme() {
+    return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+  }
+
+  function applyDeep(v) {
+    CFG.deep = v === "on";
+    Array.prototype.forEach.call($("deepSeg").children, function (b) {
+      b.classList.toggle("on", b.dataset.v === (CFG.deep ? "on" : "off"));
+    });
+  }
+
+  function loadCfg() {
+    try { var r = localStorage.getItem(KEY); if (r) CFG = Object.assign(CFG, JSON.parse(r)); } catch (e) {}
+  }
+  function saveCfg() { try { localStorage.setItem(KEY, JSON.stringify(CFG)); } catch (e) {} }
+
+  var SYS = `你是「雷石东翻译器」，一个故意的劣质机翻引擎，复刻 2012 年 Minecraft Java 1.3 中文机翻风格。
+# 两条底线
+1. 必须生硬笨拙，不可通顺优美。
+2. 每个词都要在中文里找到"对应的东西"，而不是整句意译。
+#介绍
+雷石东直译法是一种结合直译与音译的翻译方法，强调对原文词汇的逐字对应，同时保留原词的发音特征。
+定义与特点：
+“雷石东直译法”最早出现在《我的世界》游戏的中文本地化翻译中，是微软在早期中文化过程中采用的一种翻译策略 。其核心特点包括：
+直译为主：尽量保留原文的词汇和语法结构，使翻译内容与原文一一对应，确保信息准确传递 
+音译结合：对于一些专有名词或难以直译的词汇，采用音译方式保留原词发音，例如将“Redstone”翻译为“雷石东”，既保留了原词的意义，又体现了发音特征 
+幽默或夸张效果：由于直译和音译的结合，有时会产生意想不到的趣味性或误导性，例如“雷石东直放站”对应“Redstone Repeater”，在玩家中引发讨论和笑料
+
+硬性要求：
+1. 不许输出与输入几乎相同的句子。每一句都必须被改写。至少有6/7的词语被改。
+2. 一个句子中大部分名词按音节音译成汉字（Redstone→雷石东，Diamond→戴蒙德，Slime→史莱姆→斯莱姆）。如果这个名词在“雷石东翻译”对照表里有，那么直接使用。部分名词依靠“微软式中文”翻译，如果你进行了直译，那么就不需要再音译这个单词，你不能一个句子中使用音译翻译太多的名词，需要结合语境使用对应的翻译方式
+3. 复合词逐词直译，并允许乱入通信、电力、铁路、医学等行业术语（Repeater→直放站，Piston→推动器，Observer→观察者）。
+4. 语序保留英语的机械感（就像Google翻译般）：主语+的+名词+被+动词
+5. 虚词替换：没有→不存在，为什么→因何，可以→能够被，因为→由于……之原因，很→颇为，和→与，都→皆。
+   "的→之"每句最多两处。
+6. 输出不能加其他的，不加解释、不加引号、不加「译文：」。
+7.翻译后的句子不能过长，要与原句字数类似
+8.输出句子不能带有文言文，禁用吾、汝、乃、矣、焉、哉、之乎者也、四字格。
+9. 数字、英文、代码、网址、版本号、标点一律原样保留；中文标点用全角。
+10. 不确定时选最笨的直译，不要意译、不要润色、不要补充原文没有的信息。
+11.如果有一词多义的词语，那么根据语境选择错误的词语
+#对照表，如果命中对照输出
+输入：红石中继器 → 输出：雷石东直放站
+输入：这个工具可以帮助你快速翻译文本 → 输出：此工具能够被用于进行迅速的文本转译
+输入：你答对了→输出：你是如此的正确
+输入：床 → 输出：床上
+输入：Hello,I am verity.→输出：你好，我是维丽蒂
+输入：Oh my god.→输出：哦我的上帝啊
+输入：纸杯蛋糕→输出：杯子糕点
+名词翻译例子：
+Elytra→爱丽特拉
+Enchanting Book→迷人的书
+End Crystal→终结水晶
+End Gateway Block→方块端网关块
+End Stone→结石
+Ender→安德
+Enderman→恩德曼
+# 输出格式
+纯文本，行数与原文一致。不加解释、不加引号、不加"译文："、不加原文对照、不使用 Markdown。`;
+
+  function dictExact(text) {
+    var t = text.trim();
+    for (var i = 0; i < DICT.length; i++) if (t === DICT[i][0]) return DICT[i][1];
+    return null;
+  }
+  function replaceAll(text, list) {
+    var out = text, hit = 0;
+    list.slice().sort(function (a, b) { return b[0].length - a[0].length; })
+      .forEach(function (p) {
+        if (out.indexOf(p[0]) >= 0) { out = out.split(p[0]).join(p[1]); hit++; }
+      });
+    return { text: out, hit: hit };
+  }
+  function localStyle(text) {
+    var a = replaceAll(text, DICT);
+    var b = replaceAll(a.text, PHRASE);
+    if (a.hit === 0 && b.hit === 0) return null;
+    return b.text;
+  }
+
+  function explainError(msg) {
+    var s = String(msg || "");
+    if (/401|Unauthorized|invalid_api_key|Authentication/i.test(s))
+      return "Key 错误或已失效。";
+    if (/403|Forbidden|permission/i.test(s))
+      return "这个 Key 没有调用该模型的权限，或账号被限制。";
+    if (/404|Not Found|not found/i.test(s))
+      return "地址有误，检查你的Api地址";
+    if (/429|rate.?limit|quota|insufficient|balance/i.test(s))
+      return "请求太频繁/余额 不足。稍等重试，或去后台充值。";
+    if (/5\d\d|server error|Internal/i.test(s))
+      return "服务器出错，或模型名称有误，请稍后重试。";
+    if (/timeout|超时|timed out/i.test(s))
+      return "请求超时。请检查网络环境，或地址指向的服务器没响应。";
+    if (/JSON/i.test(s))
+      return "返回的不是 JSON。这个地址可能指向了网页，而不是接口。";
+    if (/没有内容|empty|choices/i.test(s))
+      return "接口通了但没有文本。多半是模型名填错，换一个再试。";
+    if (/network|请求失败|fetch|Failed|NetworkError|跨域|CORS/i.test(s))
+      return "检查手机网络，或确认这个地址能正常访问。";
+    if (/还没填/.test(s))
+      return "还没填地址。回设置页补上，例如 https://api.deepseek.com/v1。";
+    return "接口返回了异常。对照上面的原文，检查地址、Key、模型名哪一项写错了。";
+  }
+
+  function apiUrl() {
+    var u = (CFG.base || "").trim().replace(/\/+$/, "");
+    if (!u) return "";
+    if (!/\/chat\/completions$/.test(u)) u += "/chat/completions";
+    return u;
+  }
+  function buildBody(text) {
+    return JSON.stringify({
+      model: (CFG.model || "deepseek-flash").trim(),
+      messages: [
+        { role: "system", content: CFG.deep ? DEEP_PREFIX + "\n" + SYS : SYS },
+        { role: "user", content: text }
+      ],
+      temperature: 1.0,
+      stream: false
+    });
+  }
+  async function callAPI(text) {
+    var url = apiUrl();
+    if (!url) throw new Error("还没填 API 地址");
+
+    var headers = { "Content-Type": "application/json" };
+    if (CFG.key) headers["Authorization"] = "Bearer " + CFG.key;
+    var body = buildBody(text);
+    var raw = "";
+
+    if (WC && WC.network && WC.network.request) {
+      var r = await WC.network.request({ method: "POST", url: url, headers: headers, body: body, timeout: 60000 });
+      if (!r || !r.ok) throw new Error((r && r.error) || "请求失败");
+      if (r.status >= 400) throw new Error("HTTP " + r.status + " · " + String(r.body).slice(0, 200));
+      raw = r.body;
+    } else {
+      var res = await fetch(url, { method: "POST", headers: headers, body: body });
+      raw = await res.text();
+      if (!res.ok) throw new Error("HTTP " + res.status + " · " + raw.slice(0, 200));
+    }
+
+    var data;
+    try { data = JSON.parse(raw); }
+    catch (e) { throw new Error("返回不是 JSON · " + String(raw).slice(0, 80)); }
+
+    if (data.error) throw new Error(data.error.message || "接口报错");
+    var txt = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!txt) throw new Error("返回里没有内容");
+    return String(txt).trim().replace(/^["「『]+|["」』]+$/g, "");
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c];
+    });
+  }
+
+  function setOut(html, mode, note) {
+    var o = $("output");
+    o.className = "out" + (mode === "ph" ? " ph" : mode === "err" ? " err" : "");
+    o.innerHTML = html;
+    $("badge").textContent = note || "";
+  }
+  function showError(msg) {
+    setOut("翻译失败" +
+      '<span class="zh">' + esc(explainError(msg)) + "</span>" +
+      '<span class="raw">' + esc(msg) + "</span>", "err", "失败");
+  }
+
+  function paintEngine() {
+    var on = !!(CFG.key && CFG.base);
+    var el = $("engine");
+    el.className = "state" + (on ? " on" : " off");
+    el.innerHTML = '<span class="d"></span><span>' + (on ? (CFG.model || "已接入") : "本地") + "</span>";
+  }
+
+  function updateCnt() {
+    $("cnt").textContent = ($("input").value || "").length + " 字";
+  }
+
+  async function doTranslate() {
+    var text = ($("input").value || "").trim();
+    if (!text) { toast("先输入点内容"); return; }
+
+    var exact = dictExact(text);
+    if (exact) { setOut(esc(exact), "", "本地翻译"); return; }
+
+    if (!CFG.key) {
+      var loc = localStyle(text);
+      if (loc) setOut(esc(loc), "", "本地改写");
+      else setOut("本地引擎改不动这句。到设置里填上 Key，任意句子都能翻。", "ph", "");
+      return;
+    }
+
+    var btn = $("btnGo");
+    btn.disabled = true;
+    btn.textContent = "改写中";
+    setOut("正在重写…", "ph", "请求中");
+
+    try {
+      var out = await callAPI(text);
+      setOut(esc(out), "", "模型翻译");
+    } catch (e) {
+      showError(e && e.message ? e.message : String(e));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "翻译";
+    }
+  }
+
+  /* ══════ 分页 + 可拖动底栏 ══════ */
+  var TABS = ["home", "set", "about"];
+  var pager = $("pager");
+  var nav = $("nav");
+  var pill = $("pill");
+  var navBtns = nav.querySelectorAll("button");
+
+  var idx = 0;          // 当前页
+  var fpos = 0;         // 连续位置，拖动时用
+  var btnW = 0;
+  var drag = false, dragStartX = 0, dragStartF = 0, dragMoved = 0, tapBtn = null;
+
+  function measure() {
+    btnW = navBtns[0].offsetWidth;
+    pill.style.width = btnW + "px";
+  }
+
+  function render(f, animate) {
+    fpos = f;
+    if (animate === false) {
+      pager.classList.add("dragging");
+      nav.classList.add("dragging");
+    } else {
+      pager.classList.remove("dragging");
+      nav.classList.remove("dragging");
+    }
+    pager.style.transform = "translate3d(" + (-f * 33.333333) + "%,0,0)";
+    pill.style.transform = "translate3d(" + (f * btnW) + "px,0,0)";
+
+    var near = Math.round(f);
+    Array.prototype.forEach.call(navBtns, function (b, i) {
+      b.classList.toggle("on", i === near);
+    });
+  }
+
+  function go(i, animate) {
+    i = Math.max(0, Math.min(TABS.length - 1, i));
+    idx = i;
+    render(i, animate !== false);
+  }
+
+  nav.addEventListener("pointerdown", function (e) {
+    if (!btnW) measure();
+    drag = true;
+    dragMoved = 0;
+    dragStartX = e.clientX;
+    dragStartF = fpos;
+    tapBtn = e.target.closest("button");
+    nav.classList.add("dragging");
+    pager.classList.add("dragging");
+    try { nav.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+
+  nav.addEventListener("pointermove", function (e) {
+    if (!drag) return;
+    var dx = e.clientX - dragStartX;
+    if (Math.abs(dx) > dragMoved) dragMoved = Math.abs(dx);
+    var f = dragStartF + dx / btnW;
+    f = Math.max(0, Math.min(TABS.length - 1, f));
+    render(f, false);
+  });
+
+  function endDrag(e) {
+    if (!drag) return;
+    drag = false;
+    nav.classList.remove("dragging");
+    pager.classList.remove("dragging");
+
+    var dx = e.clientX - dragStartX;
+
+    if (Math.abs(dx) < 6 && tapBtn) {
+      go(Array.prototype.indexOf.call(navBtns, tapBtn));
+      tapBtn = null;
+      return;
+    }
+    tapBtn = null;
+
+    var f = dragStartF + dx / btnW;
+    f = Math.max(0, Math.min(TABS.length - 1, f));
+    go(Math.round(f));
+  }
+
+  nav.addEventListener("pointerup", endDrag);
+  nav.addEventListener("pointercancel", function (e) {
+    if (!drag) return;
+    drag = false;
+    nav.classList.remove("dragging");
+    pager.classList.remove("dragging");
+    go(idx);
+  });
+
+  /* ── 其余交互 ── */
+  ["红石中继器","红石","烈焰棒","蠹虫","床","恶魂之泪","箱子","弓","末影人",].forEach(function (s) {
+    var b = document.createElement("button");
+    b.textContent = s;
+    b.onclick = function () { $("input").value = s; updateCnt(); doTranslate(); };
+    $("terms").appendChild(b);
+  });
+
+  $("input").addEventListener("input", updateCnt);
+  $("btnGo").onclick = doTranslate;
+  $("btnRetry").onclick = function () {
+    if (!($("input").value || "").trim()) { toast("先输入点内容"); return; }
+    doTranslate();
+  };
+  $("btnClear").onclick = function () {
+    $("input").value = "";
+    updateCnt();
+    setOut("改写的句子会显示在这里", "ph", "");
+  };
+  $("btnCopy").onclick = function () {
+    var t = $("output").textContent;
+    if (!t) return;
+    if (WC && WC.clipboard) { try { WC.clipboard.set(t); toast("已复制"); return; } catch (e) {} }
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = t;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      toast("已复制");
+    } catch (e) { toast("复制失败"); }
+  };
+
+  $("btnSave").onclick = function () {
+    CFG.base = ($("cfgBase").value || "").trim();
+    CFG.key = ($("cfgKey").value || "").trim();
+    CFG.model = ($("cfgModel").value || "").trim();
+    saveCfg();
+    paintEngine();
+    toast("已保存");
+  };
+
+  Array.prototype.forEach.call($("themeSeg").children, function (b) {
+    b.onclick = function () { applyTheme(b.dataset.v); };
+  });
+
+  Array.prototype.forEach.call($("deepSeg").children, function (b) {
+    b.onclick = function () {
+      applyDeep(b.dataset.v);
+      saveCfg();
+      toast(CFG.deep ? "更好的翻译已开启" : "更好的翻译已关闭");
+    };
+  });
+
+  $("btnTest").onclick = async function () {
+    var box = $("testState");
+    box.className = "testbox show";
+    box.innerHTML = '<span class="status-title">正在连接</span>';
+
+    var bak = { base: CFG.base, key: CFG.key, model: CFG.model };
+    CFG.base = ($("cfgBase").value || "").trim();
+    CFG.key = ($("cfgKey").value || "").trim();
+    CFG.model = ($("cfgModel").value || "").trim();
+
+    try {
+      var out = await callAPI("你答对了");
+      box.className = "testbox show";
+      box.innerHTML =
+        '<span class="status-title">连接成功</span>' +
+        '<div class="raw">' + esc(out) + "</div>" +
+        '<div class="zh">成功连接，返回主页开始使用。</div>';
+      paintEngine();
+    } catch (e) {
+      var m = e && e.message ? e.message : String(e);
+      box.className = "testbox show";
+      box.innerHTML =
+        '<span class="status-title">连接失败</span>' +
+        '<div class="raw">' + esc(m) + "</div>" +
+        '<div class="zh">' + esc(explainError(m)) + "</div>";
+      CFG = bak;
+    }
+  };
+
+  function boot() {
+    loadCfg();
+    $("cfgBase").value = CFG.base;
+    $("cfgKey").value = CFG.key;
+    $("cfgModel").value = CFG.model;
+    paintEngine();
+    updateCnt();
+    applyTheme(currentTheme());
+    applyDeep(CFG.deep ? "on" : "off");
+    measure();
+    go(0, false);
+  }
+
+  window.addEventListener("resize", function () {
+    measure();
+    render(fpos, false);
+  });
+
+  function whenWebcatReady(cb) {
+    if (window.webcat) return cb(window.webcat);
+    var n = 0, t = setInterval(function () {
+      if (window.webcat) { clearInterval(t); cb(window.webcat); }
+      else if (++n > 60) { clearInterval(t); }
+    }, 50);
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    boot();
+    whenWebcatReady(function (wc) { WC = wc; });
+  });
+})();
+</script>
+</body>
+</html>
